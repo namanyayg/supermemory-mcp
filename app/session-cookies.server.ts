@@ -21,7 +21,7 @@ const { getSession, commitSession, destroySession } =
             // expires: new Date("9999-12-31"),
             path: "/",
             sameSite: "lax",
-            secrets: [process.env.AUTH_SECRET ?? ""],
+            secrets: ["TEST"],
             secure: true,
         },
     })

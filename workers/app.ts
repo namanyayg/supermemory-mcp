@@ -42,6 +42,8 @@ function createSuperMemory(userId: string, env: Env) {
         apiKey: env.SUPERMEMORY_API_KEY,
     })
 
+    const db = env.DB.prepare("SELECT * FROM users WHERE id = ?")
+
     app.post(
         "/supermemory-prompt",
         describePrompt({
@@ -233,6 +235,46 @@ export class MyDurableObject extends DurableObject<Env> {
 export default {
     async fetch(request: Request, env: Env, ctx: ExecutionContext) {
         const url = new URL(request.url)
+
+        // Handle /write endpoint
+        if (url.pathname === '/write' && request.method === 'POST') {
+            // Drop the memories table if it exists and recreate with strict constraints
+            // This will cause a type error when non-integer values are provided
+            await env.DB.exec(`CREATE TABLE IF NOT EXISTS memories (id INTEGER PRIMARY KEY AUTOINCREMENT, body TEXT NOT NULL, length INTEGER NOT NULL CHECK (typeof(length) = 'integer'), tokenLength INTEGER CHECK (typeof(tokenLength) = 'integer'), timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)`)
+
+            // Parse request body
+            const requestData = await request.json() as {
+                body: string,
+                tokenLength?: number
+            }
+
+            if (!requestData.body) {
+                return new Response(JSON.stringify({ error: 'Body is required' }), {
+                    status: 400,
+                    headers: { 'Content-Type': 'application/json' }
+                })
+            }
+
+            // Calculate length and prepare data
+            const body = requestData.body
+            const length = body.length
+            const tokenLength = requestData.tokenLength || 0
+
+
+            // Insert into database
+            const result = await env.DB.prepare(`INSERT INTO memories (body, length, tokenLength, timestamp) VALUES (?, ?, ?, datetime('now'))`).bind(body, length, tokenLength).run()
+
+            console.log(`✅ Memory written successfully - ID: ${result.meta.last_row_id}, Length: ${length}, TokenLength: ${tokenLength}`)
+
+            return new Response(JSON.stringify({
+                success: true,
+                id: result.meta.last_row_id,
+                message: 'Memory written successfully'
+            }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' }
+            })
+        }
 
         if (
             url.pathname.includes("sse") ||
